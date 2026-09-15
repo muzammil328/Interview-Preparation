@@ -106,9 +106,12 @@ V8 creates hidden classes to track object shape. Objects with same structure sha
 - Node.js uses a **single main thread** (event loop thread) to run JavaScript
 - Uses **event loop + callback queue** to handle concurrency
 
+When an I/O operation (like reading a file) is requested, Node offloads it to the libuv thread pool or the OS kernel. The event loop continues with other work, and when the operation completes its callback is queued for the main thread.
+
 ### Why not for CPU-heavy tasks?
 
 - Blocks the single thread and event loop
+- Offload them with `worker_threads` or `cluster` instead
 
 ---
 
@@ -127,14 +130,39 @@ The event loop is a core mechanism that allows JS to perform non-blocking, async
 
 ### Event Loop Phases
 
-1. Timers
-2. Pending callbacks
-3. Idle, prepare
-4. Poll
-5. Check
-6. Close callbacks
+Handled by **libuv**. Each phase has its own callback queue.
 
-Microtasks (like Promise callbacks) always take priority and run before Macrotasks (like setTimeout).
+| #   | Phase             | What it handles                                    |
+| --- | ----------------- | -------------------------------------------------- |
+| 1   | Timers            | `setTimeout` and `setInterval` callbacks           |
+| 2   | Pending callbacks | Deferred system/TCP errors                         |
+| 3   | Idle, prepare     | Internal use only                                  |
+| 4   | Poll              | New I/O events — network, files, database, streams |
+| 5   | Check             | `setImmediate` callbacks                           |
+| 6   | Close callbacks   | `socket.on('close')`, stream closures              |
+
+### Microtasks and process.nextTick()
+
+Between **every** phase, Node drains two extra queues before moving on:
+
+1. **`process.nextTick()` queue** — highest priority
+2. **Microtask queue** — `.then()`, `.catch()`, `.finally()`, `await`
+
+```text
+Synchronous code
+   ↓
+process.nextTick queue
+   ↓
+Microtask queue (Promises)
+   ↓
+Next event loop phase (timers, poll, check, ...)
+```
+
+- `process.nextTick()` schedules a callback to fire immediately after the current operation completes, **before** the event loop continues.
+- The nextTick and Promise queues are managed by V8/Node, not libuv, which is why they jump ahead of every phase.
+- Macrotasks (timers, I/O, `setImmediate`) are the lowest priority and are handled by libuv.
+
+**Warning:** recursive `process.nextTick()` calls starve the event loop — the loop never reaches the next phase. Use `setImmediate()` when you want to yield.
 
 ---
 
@@ -251,20 +279,166 @@ The Buffer class in Node.js is used to create and manipulate binary data directl
 
 ---
 
-## Clustering & Scaling
+## Core Architecture Components
 
-### Clustering
+| Component        | What it is                                                                        |
+| ---------------- | --------------------------------------------------------------------------------- |
+| Main Thread      | The single execution path where V8 runs JS and libuv drives the event loop        |
+| Call Stack       | LIFO memory structure the thread uses to track active function calls              |
+| V8 Engine        | Compiles and executes JS into machine code                                        |
+| libuv            | C++ library providing the event loop, thread pool, and OS kernel integration      |
+| C++ Bindings     | Wrapper layer bridging high-level JS APIs to Node's low-level C++ source          |
 
-Use multiple CPU cores:
+### What is libuv?
+
+libuv is the C++ library that gives Node its **event loop**, its **thread pool**, and its access to **OS kernel** async facilities. It handles all asynchronous operations — file system, networking, DNS, concurrency — and is what makes Node's non-blocking I/O possible.
+
+---
+
+## Creating a Web Server with the HTTP Module
+
+Use `http.createServer()` to create the server and `server.listen()` to start it on a port.
 
 ```javascript
-const cluster = require('cluster');
+const http = require('http');
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ message: 'Hello' }));
+});
+
+server.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
 ```
+
+---
+
+## How Does Node Handle Heavy Work if It Is Single-Threaded?
+
+### 1. libuv Thread Pool — heavy background I/O
+
+- Used for file system tasks (`fs.readFile`), DNS lookups, `crypto`, and compression
+- Default size is 4 threads (`UV_THREADPOOL_SIZE`)
+- Threads share memory with the main process
+
+### 2. OS Kernel — network tasks
+
+- Used for network/socket work (`http`, `net`)
+- The kernel handles these asynchronously, so no thread pool is needed
+
+### 3. Worker Threads — heavy CPU tasks in the same app
+
+- The `worker_threads` module runs isolated JS on separate CPU threads **inside one process**
+- Can share memory via `SharedArrayBuffer`
+- Good for heavy math, image resizing, large file parsing
+
+### 4. Cluster — scaling the whole app
+
+- Clones the entire server application into separate, independent Node processes
+- A primary process distributes incoming connections across worker processes
+- **No shared memory** between workers
+
+| Worker Threads                    | Cluster                              |
+| --------------------------------- | ------------------------------------ |
+| Threads inside one process        | Separate processes                   |
+| Can share memory                  | No shared memory                     |
+| For CPU-heavy computation         | For scaling across CPU cores         |
 
 ### Scaling
 
-- **Horizontal**: Multiple servers
-- **Vertical**: Increase server power
+- **Vertical**: increase the power of one server (more CPU/RAM)
+- **Horizontal**: run multiple servers behind a load balancer
+
+---
+
+## Event-Driven Programming
+
+Program execution is driven by events and event handlers.
+
+```text
+Event → Listener → Handler
+```
+
+Node uses this model heavily for asynchronous operations.
+
+### EventEmitter
+
+`EventEmitter` lets one part of your code send a signal with `.emit()` while another part listens with `.on()` and reacts.
+
+```javascript
+const EventEmitter = require('events');
+const emitter = new EventEmitter();
+
+emitter.on('order', (id) => {
+  console.log('Order received:', id);
+});
+
+emitter.emit('order', 42); // Order received: 42
+```
+
+**Key methods:** `on()`, `once()`, `emit()`, `off()`
+
+Listeners are called **synchronously**, in the order they were registered.
+
+---
+
+## Control Flow
+
+Control flow is the order in which instructions, lines of code, and function calls execute.
+
+- **Synchronous** — each line finishes before the next starts, blocking the thread
+- **Asynchronous** — work is offloaded and a callback runs later, keeping the thread free
+
+Async control flow evolved: callbacks → Promises → `async`/`await`.
+
+---
+
+## Child Processes
+
+Child processes let Node execute another process or program.
+
+| Method       | Use                                                       |
+| ------------ | --------------------------------------------------------- |
+| `spawn()`    | Launch a new process and stream its output                |
+| `exec()`     | Run a shell command and buffer the full output            |
+| `execFile()` | Run an executable directly, without a shell               |
+| `fork()`     | Spawn a new **Node** process with a built-in message channel |
+
+### spawn() vs fork()
+
+| `spawn()`                       | `fork()`                                  |
+| ------------------------------- | ----------------------------------------- |
+| Runs any executable             | Runs a Node.js module                     |
+| Communicates through streams    | Has built-in IPC (inter-process messaging) |
+| Good for long-running commands  | Good for Node worker processes            |
+
+`fork()` is a special case of `spawn()`.
+
+---
+
+## REPL
+
+**Read-Eval-Print-Loop** — run JavaScript line by line directly in the terminal by typing `node` with no arguments.
+
+- **Read** the input
+- **Eval**uate it
+- **Print** the result
+- **Loop** back for the next input
+
+---
+
+## tls Module
+
+The `tls` module provides encrypted communication over TCP using TLS/SSL.
+
+It provides:
+
+- **Encryption** — data cannot be read in transit
+- **Authentication** — certificates prove server identity
+- **Data integrity** — tampering is detectable
+
+`https` uses `tls` underneath.
 
 ---
 
