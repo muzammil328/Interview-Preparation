@@ -31,6 +31,20 @@ JavaScript has two types of data:
 - To avoid hoisting, use strict mode: `"use strict";`
 - let and const are hoisted but in "temporal dead zone"
 
+Declarations are processed before the code executes. `var` is initialized as `undefined`, while `let` and `const` stay in the Temporal Dead Zone until initialized.
+
+### Temporal Dead Zone (TDZ)
+
+The TDZ is the period between entering a scope and initializing a `let` or `const` variable. Accessing the variable during this period throws a `ReferenceError`.
+
+```javascript
+console.log(a); // undefined  (var is initialized as undefined)
+var a = 10;
+
+console.log(b); // ReferenceError: Cannot access 'b' before initialization
+let b = 20;
+```
+
 ## var vs let vs const
 
 | Feature        | var | let       | const     |
@@ -105,6 +119,20 @@ isNaN(345); // Returns false
 isNaN('1'); // Returns false (converted to 1)
 isNaN(true); // Returns false (converted to 1)
 isNaN(undefined); // Returns true
+```
+
+## null vs undefined
+
+| null                            | undefined                        |
+| ------------------------------- | -------------------------------- |
+| Means intentionally no value    | Means a value has not been assigned |
+| Usually assigned by the developer | Usually happens automatically   |
+| Example: `user = null`          | Example: `let user;`             |
+| `typeof` → `"object"` (JS quirk) | `typeof` → `"undefined"`        |
+
+```javascript
+null == undefined;  // true  (loose equality treats them as equal)
+null === undefined; // false (different types)
 ```
 
 ## Passed by Value vs Passed by Reference
@@ -864,19 +892,109 @@ sumOfThreeElements(4, 5, 6)
   .catch(error => console.log(error));
 ```
 
+A promise is always in one of three states: **pending**, **fulfilled**, or **rejected**. Once settled, it never changes again.
+
+---
+
+## Callbacks vs Promises vs Async/Await
+
+Async/await is built on Promises — it is syntax, not a different mechanism.
+
+| Callback                       | Promise                   | Async/Await                          |
+| ------------------------------ | ------------------------- | ------------------------------------ |
+| Can become deeply nested       | Chained with `.then()`    | Looks like normal synchronous code   |
+| Can cause callback hell        | Cleaner than callbacks    | Usually the easiest to read          |
+| Error handling is awkward      | `.catch()`                | `try` / `catch`                      |
+| Least readable for complex flows | More readable           | Most readable                        |
+
+```javascript
+// Callback
+getUser(function (user) {
+  getOrders(user, function (orders) {
+    console.log(orders);
+  });
+});
+
+// Promise
+getUser()
+  .then((user) => getOrders(user))
+  .then((orders) => console.log(orders))
+  .catch((error) => console.log(error));
+
+// Async/Await
+async function getData() {
+  try {
+    const user = await getUser();
+    const orders = await getOrders(user);
+    console.log(orders);
+  } catch (error) {
+    console.log(error);
+  }
+}
+```
+
+**Tip:** independent `await` calls run one after another. Use `Promise.all()` to run them in parallel.
+
 ---
 
 # JavaScript Advanced Concepts
 
 ## Event Loop
 
-1. Call Stack executes synchronous code
-2. Web APIs handle async operations
-3. Callback Queue holds macrotasks
-4. Microtask Queue holds promises
-5. Event loop moves tasks to call stack
+JavaScript is single-threaded. The Event Loop is what lets it handle asynchronous work without blocking.
 
-**Important:** Microtasks run before macrotasks.
+### Runtime Components
+
+| Component           | Role                                                                          |
+| ------------------- | ----------------------------------------------------------------------------- |
+| **V8 Engine**       | The brain — contains the single Call Stack and the internal Microtask Queue   |
+| **Web APIs**        | Background workers that handle heavy async tasks outside the main thread      |
+| **Queues**          | Two lines — the high-priority Microtask Queue and low-priority Macrotask Queue |
+| **Event Loop**      | Traffic cop — checks the stack and moves tasks from the queues into it        |
+
+### Execution Phases (Chronological Order)
+
+**1. Synchronous code runs first**
+
+Code runs top to bottom. Synchronous code goes straight onto the Call Stack and executes immediately.
+
+**2. Async work is handed off**
+
+When the engine hits something async it doesn't block — it hands the work elsewhere:
+
+| Async Type                 | Goes To                                                          |
+| -------------------------- | ---------------------------------------------------------------- |
+| `setTimeout` / `setInterval` | Web API → then → **Macrotask Queue**                            |
+| `Promise.then()`           | Directly → **Microtask Queue** (inside the V8 engine)             |
+
+**3. Once the Call Stack is empty, the Event Loop takes over**
+
+- **First** → drain the **entire** Microtask Queue, running every microtask one by one until it is completely empty (not just one).
+- **Then** → take **ONE** task from the Macrotask Queue, push it to the Call Stack, and run it.
+- After that macrotask finishes, check the Microtask Queue again and drain it fully (new microtasks may have been added), then run the next macrotask, and so on.
+
+```text
+Sync code
+   ↓
+Call Stack empty?
+   ↓
+Drain ALL microtasks
+   ↓
+Run ONE macrotask
+   ↓
+Drain ALL microtasks again
+   ↓
+Run the next macrotask ...
+```
+
+### Microtasks vs Macrotasks
+
+| Microtasks                                | Macrotasks                                        |
+| ----------------------------------------- | ------------------------------------------------- |
+| Higher priority                           | Run after microtasks                              |
+| Execute right after the current sync code | Execute after the microtask queue is cleared      |
+| `Promise.then()`, `queueMicrotask()`, `await` | `setTimeout()`, `setInterval()`, I/O, UI events |
+| The Event Loop clears **all** of them     | The Event Loop takes **one**, then rechecks microtasks |
 
 ```javascript
 console.log('1');
@@ -885,6 +1003,8 @@ Promise.resolve().then(() => console.log('3'));
 console.log('4');
 // Output: 1, 4, 3, 2
 ```
+
+**Warning:** a microtask that keeps queueing more microtasks blocks the macrotask queue forever — the page freezes.
 
 ---
 
@@ -926,6 +1046,19 @@ function throttle(fn, limit) {
   };
 }
 ```
+
+---
+
+## Debouncing vs Throttling
+
+Both control how often a function runs, especially for search, scroll, and resize events.
+
+| Debouncing                                | Throttling                          |
+| ----------------------------------------- | ----------------------------------- |
+| Runs after the user stops triggering the event | Runs at most once in a fixed time |
+| Waits until the activity stops            | Runs at regular intervals           |
+| Good for search input                     | Good for scrolling                  |
+| User types → wait → one API call          | User scrolls → runs every 200ms     |
 
 ---
 
