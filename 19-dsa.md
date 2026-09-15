@@ -261,7 +261,7 @@ let arr = [0, 1, 0, 3, 12];
 
 // Method 1: Filter
 let nonZeros = arr.filter(num => num !== 0);
-let zerosCount = arr.length - nonZeros;
+let zerosCount = arr.length - nonZeros.length;
 let result = [...nonZeros, ...Array(zerosCount).fill(0)];
 console.log(result); // [1, 3, 12, 0, 0]
 
@@ -505,6 +505,251 @@ if ([]) console.log('empty array'); // will run! (array is truthy)
 if ({}) console.log('empty object'); // will run! (object is truthy)
 ```
 
+---
+
+## Coding Challenges
+
+### Find All Duplicates in an Array
+
+Use one `Set` to track what you have seen and another for the duplicates.
+
+```javascript
+function findDuplicates(arr) {
+  const seen = new Set();
+  const duplicates = new Set();
+
+  for (const item of arr) {
+    if (seen.has(item)) {
+      duplicates.add(item);
+    } else {
+      seen.add(item);
+    }
+  }
+  return Array.from(duplicates);
+}
+
+const numbers = [1, 2, 3, 2, 4, 5, 1, 6, 1];
+console.log(findDuplicates(numbers)); // [2, 1]
 ```
 
+**Time:** O(n) — **Space:** O(n)
+
+A second `Set` is needed so a value appearing three times is not reported twice.
+
+---
+
+### Find the First Duplicate in an Array
+
+Return as soon as a value is seen a second time.
+
+```javascript
+function findFirstDuplicate(arr) {
+  const seen = new Set();
+
+  for (const value of arr) {
+    if (seen.has(value)) {
+      return value;
+    }
+    seen.add(value);
+  }
+  return -1;
+}
+
+const numbers = [1, 2, 3, 2, 4, 5, 1, 6, 1];
+console.log(findFirstDuplicate(numbers)); // 2
 ```
+
+**Time:** O(n) — **Space:** O(n)
+
+**Note:** prefer `Set` over a plain object here. An object turns keys into strings, so `1` and `'1'` collide, and inherited keys like `constructor` can give false positives.
+
+---
+
+### Remove Duplicates In Place (Two Pointers)
+
+The `Set` method is already shown above. This is the version interviewers ask for when extra memory is not allowed.
+
+```javascript
+function removeDuplicatesInPlace(arr) {
+  if (arr.length === 0) return arr;
+
+  // 1. Sort the array first
+  arr.sort((a, b) => a - b);
+
+  // 2. Shift unique elements to the front
+  let writePointer = 1;
+
+  for (let readPointer = 1; readPointer < arr.length; readPointer++) {
+    if (arr[readPointer] !== arr[readPointer - 1]) {
+      arr[writePointer] = arr[readPointer];
+      writePointer++;
+    }
+  }
+
+  // 3. Trim the array to its new length
+  arr.length = writePointer;
+  return arr;
+}
+
+const nums = [3, 1, 2, 3, 4, 1, 2];
+console.log(removeDuplicatesInPlace(nums)); // [1, 2, 3, 4]
+```
+
+**Time:** O(n log n) because of the sort — **Space:** O(1)
+
+**Trade-off:** this changes the original array and loses the original order.
+
+---
+
+### Reverse an Array
+
+```javascript
+// In place (mutates the original)
+const original = ['a', 'b', 'c', 'd'];
+original.reverse();
+console.log(original); // ['d', 'c', 'b', 'a']
+
+// Without mutating
+const arr = ['a', 'b', 'c', 'd'];
+const reversed = [...arr].reverse();
+console.log(arr);      // ['a', 'b', 'c', 'd']
+console.log(reversed); // ['d', 'c', 'b', 'a']
+
+// Manual two pointer
+function reverseArray(arr) {
+  let left = 0;
+  let right = arr.length - 1;
+  while (left < right) {
+    [arr[left], arr[right]] = [arr[right], arr[left]];
+    left++;
+    right--;
+  }
+  return arr;
+}
+```
+
+---
+
+### Find Minimum and Maximum in an Array
+
+```javascript
+const numbers = [14, 58, 2, 99, 43, -5];
+
+console.log(Math.max(...numbers)); // 99
+console.log(Math.min(...numbers)); // -5
+```
+
+**Warning:** spreading fails with a "Maximum call stack size exceeded" error on very large arrays (roughly 100k+ items), because each element becomes a function argument. Use a loop or `reduce` instead:
+
+```javascript
+function minMax(arr) {
+  let min = arr[0];
+  let max = arr[0];
+
+  for (const num of arr) {
+    if (num < min) min = num;
+    if (num > max) max = num;
+  }
+  return { min, max };
+}
+
+console.log(minMax(numbers)); // { min: -5, max: 99 }
+```
+
+**Time:** O(n) — **Space:** O(1)
+
+---
+
+### Two Sum (Map Version)
+
+Returns the **indices** of the two numbers that add up to the target.
+
+```javascript
+function twoSum(nums, target) {
+  const seen = new Map(); // number => index
+
+  for (let i = 0; i < nums.length; i++) {
+    const complement = target - nums[i];
+
+    if (seen.has(complement)) {
+      return [seen.get(complement), i];
+    }
+    seen.set(nums[i], i);
+  }
+  return [];
+}
+
+console.log(twoSum([2, 7, 11, 15], 9)); // [0, 1]
+```
+
+**Time:** O(n) — **Space:** O(n)
+
+Check for the complement **before** storing the current number, otherwise a number could pair with itself.
+
+---
+
+### First Non-Repeating Character (Return Index)
+
+```javascript
+function firstUniqChar(str) {
+  const charCount = {};
+
+  // Pass 1: count each character
+  for (const char of str) {
+    charCount[char] = (charCount[char] || 0) + 1;
+  }
+
+  // Pass 2: find the first with a count of 1
+  for (let i = 0; i < str.length; i++) {
+    if (charCount[str[i]] === 1) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+console.log(firstUniqChar('leetcode'));     // 0  ('l')
+console.log(firstUniqChar('loveleetcode')); // 2  ('v')
+console.log(firstUniqChar('aabb'));         // -1 (none)
+```
+
+**Time:** O(n) — **Space:** O(1), at most 26 letters (or the alphabet size)
+
+Two passes are required — you cannot know a character is unique until the whole string is counted.
+
+---
+
+### Palindrome With Cleaning
+
+Handles spaces, punctuation, and mixed case.
+
+```javascript
+// Shortcut
+function isPalindromeShort(str) {
+  const cleaned = str.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return cleaned === cleaned.split('').reverse().join('');
+}
+
+// Two pointer (no extra string created)
+function isPalindrome(str) {
+  const cleaned = str.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  let left = 0;
+  let right = cleaned.length - 1;
+
+  while (left < right) {
+    if (cleaned[left] !== cleaned[right]) {
+      return false;
+    }
+    left++;
+    right--;
+  }
+  return true;
+}
+
+console.log(isPalindrome('Racecar'));                       // true
+console.log(isPalindrome('A man, a plan, a canal: Panama')); // true
+console.log(isPalindrome('hello'));                          // false
+```
+
+The two-pointer version is better because it can exit early and does not build a reversed copy.
