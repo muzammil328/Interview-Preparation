@@ -216,6 +216,168 @@ flowchart LR
 
 ---
 
+## F10. Back-of-Envelope Estimation
+
+Interviewers want rough numbers, not exact ones. Round aggressively.
+
+```text
+Handy numbers
+  1 day          ≈ 86,400 sec  → round to 100,000 (10^5)
+  1 million/day  ≈ 12 per second
+  100M/day       ≈ 1,200 per second
+  Peak traffic   ≈ 2–3× the average
+
+Latency (roughly)
+  Read from RAM / Redis      ~ 0.1 ms
+  SSD read                   ~ 0.1–1 ms
+  DB query with index        ~ 1–10 ms
+  Same-region network call   ~ 1 ms
+  Cross-continent call       ~ 100–150 ms
+```
+
+**Worked example — photo app, 10M daily users, each uploads 1 photo (500 KB):**
+
+```text
+Writes:   10M / 100K sec         = 100 uploads/sec   (peak ~300)
+Storage:  10M × 500 KB           = 5 TB per day
+          5 TB × 365             ≈ 1.8 PB per year   → object storage (S3), not a DB
+Reads:    100 reads per upload   = 10,000 reads/sec  → needs CDN + cache
+```
+
+The numbers tell you **what the design needs**: here, S3 for files and a CDN for reads.
+
+---
+
+## F11. Consistent Hashing
+
+Problem: you spread keys across cache servers with `hash(key) % N`. Add one server and **almost every key moves**, so the cache is suddenly empty.
+
+```text
+hash % 3 (3 servers)      hash % 4 (4 servers)
+key 10 → server 1         key 10 → server 2   moved ✗
+key 11 → server 2         key 11 → server 3   moved ✗
+key 12 → server 0         key 12 → server 0   same
+                          ~75% of keys move → cache miss storm
+```
+
+**Consistent hashing** puts servers and keys on a ring. A key goes to the next server clockwise.
+
+```text
+                 Server A
+                 ●
+          k1 ·       · k2
+       ·                 ·
+Server D ●                 ● Server B
+       ·                 ·
+          k4 ·       · k3
+                 ●
+                 Server C
+
+Add Server E between A and B → only keys between A and E move to E.
+Everything else stays where it was.
+```
+
+- Only about `1/N` of the keys move when a server is added or removed.
+- **Virtual nodes** (each server appears many times on the ring) spread load evenly.
+- Used by: DynamoDB, Cassandra, Redis Cluster–style sharding, CDNs, load balancers.
+
+---
+
+## F12. Single Point of Failure (SPOF) and Redundancy
+
+A SPOF is any one component that takes the whole system down when it fails.
+
+```text
+✗ SPOFs everywhere                     ✓ Redundant
+
+User → [1 server] → [1 DB]             User → LB pair ─┬─► Server 1 ─┐
+                                                       ├─► Server 2 ─┼─► DB primary
+                                                       └─► Server 3 ─┘      │ replicates
+                                                                            ▼
+                                                                       DB standby (other AZ)
+```
+
+| Layer | How to remove the SPOF |
+| ----- | ---------------------- |
+| Server | Several servers behind a load balancer |
+| Load balancer | Managed LB (AWS ALB is already redundant) |
+| Database | Primary + standby with automatic failover (Multi-AZ) |
+| Region / data center | Run in multiple availability zones |
+| Cache | Redis replica or cluster; app still works (slower) if cache dies |
+
+**Interview tip:** after drawing your design, point at each box and ask, "What happens if this dies?"
+
+---
+
+## F13. Strong vs Eventual Consistency
+
+```text
+Strong consistency                       Eventual consistency
+
+Write x = 5 ──► all replicas updated     Write x = 5 ──► primary updated
+                 before "OK"                              │ replicates in background
+Read anywhere → 5 ✓ always               Read replica → 4 (old) for a moment
+                                         ... a few ms later → 5 ✓
+Slower, less available                   Faster, more available
+```
+
+| Use strong | Eventual is fine |
+| ---------- | ---------------- |
+| Bank balance, payments | Like / view counts |
+| Inventory / seat booking | Social feed |
+| Username uniqueness | Search index, analytics |
+
+**Read-your-own-writes:** a user edits their profile and immediately sees the old one (read from a lagging replica). Fix: read that user's own data from the primary for a few seconds after they write.
+
+---
+
+## F14. How do you generate unique IDs in a distributed system?
+
+| Approach | Example | Pros | Cons |
+| -------- | ------- | ---- | ---- |
+| DB auto-increment | `1, 2, 3` | Simple, small, sortable | One DB is the bottleneck; guessable |
+| UUID v4 | `f47ac10b-58cc-...` | Generated anywhere, no coordination | 128-bit, random → poor index locality, not sortable |
+| UUID v7 / ULID | time-prefixed | Sortable by time, generated anywhere | Still 128-bit |
+| Snowflake (Twitter) | 64-bit number | Sortable, compact, no coordination | Needs unique machine IDs, clock care |
+
+```text
+Snowflake ID (64 bits)
+
+┌─┬──────────────────────────────┬────────────┬──────────────┐
+│0│ timestamp (41 bits, ms)      │ machine(10)│ sequence (12)│
+└─┴──────────────────────────────┴────────────┴──────────────┘
+     ~69 years of ms              1024 servers  4096 IDs per ms per server
+```
+
+Rule of thumb: auto-increment for a single DB, UUID v7 / Snowflake when many servers create IDs.
+
+---
+
+## F15. How do you know your system is down? (Monitoring & Observability)
+
+```mermaid
+flowchart LR
+    App["API servers"] --> L["Logs<br/>what happened"]
+    App --> M["Metrics<br/>how much / how fast"]
+    App --> T["Traces<br/>where time went"]
+    M --> A["Alerts<br/>error rate above 1% for 5 min"]
+    A --> P["On-call engineer<br/>Slack / PagerDuty"]
+```
+
+| Signal | Example | Tool examples |
+| ------ | ------- | ------------- |
+| **Logs** | `ERROR payment failed orderId=91` | CloudWatch Logs, ELK, Loki |
+| **Metrics** | requests/sec, p95 latency, error %, CPU | Prometheus + Grafana, Datadog |
+| **Traces** | One request: API 20ms → DB 400ms → Stripe 90ms | OpenTelemetry, Jaeger |
+
+**The 4 golden signals** to watch: **latency, traffic, errors, saturation** (how full CPU/memory/connections are).
+
+- Add a **health check** endpoint (`GET /health`) that the load balancer and uptime monitor call.
+- Alert on **user-facing symptoms** (error rate, latency), not every CPU spike.
+- Put a **request ID** in every log line so you can follow one request across services.
+
+---
+
 # Scenario Questions
 
 ## Q1. How would you send an email to 10 million users reliably and efficiently?
@@ -751,3 +913,418 @@ Every server runs the same code, so a 9 AM job would run 5 times.
 - The `EX` expiry releases the lock even if that server crashes.
 - Or run scheduled jobs from **one** dedicated scheduler (e.g. a BullMQ repeatable job, AWS EventBridge) that pushes to a queue.
 - Make the job itself **idempotent** in case it runs twice anyway.
+
+---
+
+## Q19. Design a Ticket / Seat Booking System (like BookMyShow)
+
+**Requirements:** users pick seats, have 10 minutes to pay, and no seat is ever sold twice.
+
+```text
+Seat states
+
+AVAILABLE ──select──► HELD (10 min, userId) ──pay ✓──► BOOKED
+    ▲                        │
+    └──── timeout / cancel ──┘
+```
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API
+    participant R as Redis
+    participant DB
+    U->>API: hold seats A5, A6
+    API->>R: SET seat:show9:A5 userId NX EX 600
+    R-->>API: OK (or null = someone else has it)
+    API-->>U: held, pay within 10 min
+    U->>API: pay
+    API->>DB: UPDATE seats SET status='BOOKED'<br/>WHERE id IN (A5, A6) AND status='AVAILABLE'
+    API->>R: DEL holds
+    API-->>U: booking confirmed
+```
+
+- The **hold** uses Redis `SET NX EX`: only one user gets it, and it expires on its own if they leave.
+- The **final booking** is still protected in the DB (conditional `UPDATE` or a unique constraint on `(show_id, seat_id)`), because Redis is not the source of truth.
+- Hold **all seats or none**: if A6 fails, release A5.
+- Popular shows: put users in a **virtual waiting room** queue so the booking service isn't flooded.
+
+---
+
+## Q20. Design a Ride-Sharing App (like Uber) — finding nearby drivers
+
+```mermaid
+flowchart LR
+    D["Driver app<br/>sends GPS every 4s"] --> LS["Location Service"]
+    LS --> R[("Redis GEO<br/>driverId → lat,lng")]
+    Rider["Rider requests ride"] --> M["Matching Service"]
+    M -->|"GEOSEARCH within 3 km"| R
+    M -->|"offer ride"| D2["Nearest available driver"]
+    D2 -->|"accept"| T["Trip Service + DB"]
+```
+
+**How do you find "drivers within 3 km" fast?** Don't compare the rider with every driver. Split the map into cells (**geohash**):
+
+```text
+Map divided into geohash cells          Rider in cell "tdr1y"
+┌──────┬──────┬──────┐                  → search that cell + 8 neighbours
+│tdr1v │tdr1y │tdr1z │                    (only a few hundred drivers,
+├──────┼──────┼──────┤                     not 1 million)
+│tdr1t │ 🧍   │tdr1x │
+├──────┼──────┼──────┤
+│tdr1s │tdr1u │tdr1w │
+└──────┴──────┴──────┘
+```
+
+- Driver locations are **write-heavy** and short-lived → keep them in memory (Redis GEO), not the main DB.
+- Lock the driver while an offer is pending, so two riders can't get the same driver.
+- Live trip tracking: driver location → WebSocket → rider's map.
+
+---
+
+## Q21. Design a Video Streaming Platform (like YouTube)
+
+```mermaid
+flowchart LR
+    U["Creator"] -->|"pre-signed upload"| RAW[("S3 raw video")]
+    RAW --> Q[(Transcode Queue)]
+    Q --> W["Transcoding workers<br/>FFmpeg"]
+    W --> OUT[("S3: 240p, 480p,<br/>720p, 1080p chunks")]
+    OUT --> CDN["CDN"]
+    CDN --> V["Viewers"]
+    W --> DB[("Video metadata DB<br/>title, status, URLs")]
+```
+
+**Adaptive bitrate streaming (HLS / DASH):**
+
+```text
+video.mp4 ──transcode──► 1080p: [seg1][seg2][seg3]...   each segment ~4–6 sec
+                         720p:  [seg1][seg2][seg3]...
+                         480p:  [seg1][seg2][seg3]...
+                         + playlist (.m3u8) listing them
+
+Player on fast Wi-Fi  → downloads 1080p segments
+Network slows down    → next segment switches to 480p (no buffering)
+```
+
+- Upload and transcoding are **async** — status goes `UPLOADING → PROCESSING → READY`.
+- Video bytes are served by the **CDN**, never by your API servers.
+- View counts use the high-scale counter pattern from Q25.
+
+---
+
+## Q22. Design Food Delivery Order Tracking
+
+The order is a **state machine** — every change is an event the customer can see.
+
+```text
+PLACED ─► ACCEPTED ─► PREPARING ─► PICKED_UP ─► DELIVERED
+   │          │
+   └──────────┴──► CANCELLED (only allowed before PICKED_UP)
+```
+
+```mermaid
+flowchart LR
+    R["Restaurant app"] -->|"status update"| OS["Order Service"]
+    D["Rider app GPS"] --> LS["Location Service"]
+    OS --> E[("Event bus")]
+    LS --> E
+    E --> N["Notification Service<br/>push / SMS"]
+    E --> WS["WebSocket Gateway"]
+    WS --> C["Customer's live map"]
+```
+
+- Validate transitions on the server: `DELIVERED → PREPARING` must be rejected.
+- Store every status change with a timestamp (an **order history** table) — useful for support and ETAs.
+- Live location: push over WebSocket/SSE every few seconds; don't make the client poll.
+
+---
+
+## Q23. E-commerce Checkout — Order, Payment, Inventory (Saga Pattern)
+
+In microservices you can't wrap three services in one DB transaction. A **saga** runs a series of local steps, and if one fails, runs **compensating** steps to undo the earlier ones.
+
+```text
+Happy path
+  1. Order Service      create order (PENDING)
+  2. Inventory Service  reserve stock
+  3. Payment Service    charge card
+  4. Order Service      mark CONFIRMED
+
+Payment fails at step 3 → compensate backwards
+  3 ✗ charge failed
+  2 ↩ release reserved stock
+  1 ↩ mark order CANCELLED
+```
+
+```mermaid
+flowchart LR
+    O["Create order"] --> I["Reserve stock"]
+    I --> P{"Charge card"}
+    P -->|success| C["Order CONFIRMED"]
+    P -->|fail| RI["Release stock"] --> X["Order CANCELLED"]
+```
+
+- **Orchestration:** one coordinator service tells each step what to do (easier to follow).
+- **Choreography:** each service listens for events (`StockReserved`) and reacts (looser coupling, harder to trace).
+- Every step must be **idempotent**, because messages can be delivered twice.
+
+---
+
+## Q24. How do you handle payment webhooks (e.g. Stripe) safely?
+
+The payment provider calls **your** endpoint when something happens (`payment_intent.succeeded`).
+
+```mermaid
+sequenceDiagram
+    participant S as Stripe
+    participant API as Webhook endpoint
+    participant DB
+    participant Q as Queue
+    S->>API: POST /webhooks/stripe (event evt_123)
+    API->>API: verify signature header
+    API->>DB: INSERT event evt_123 (unique) — already exists? skip
+    API->>Q: push "process evt_123"
+    API-->>S: 200 OK (quickly)
+    Q->>Q: worker fulfils order
+```
+
+- **Verify the signature** — otherwise anyone can POST "payment succeeded".
+- **Respond fast (2xx)**, then do the work in a queue. Slow responses get retried by the provider.
+- **Store event IDs with a unique constraint** — providers retry, so the same event arrives more than once.
+- Events can arrive **out of order** — check the current state instead of assuming the sequence.
+- Never trust the client's "payment done" redirect alone; the webhook (or an API check) is the truth.
+
+---
+
+## Q25. Design a Like / View Counter for Millions of Events
+
+Problem: a viral post gets 50,000 likes per second. `UPDATE posts SET likes = likes + 1` 50K times/sec locks the same row → DB melts.
+
+```text
+✗ Every like hits the same DB row        ✓ Count in Redis, flush in batches
+
+like ─► UPDATE row 42 ┐                  like ─► INCR likes:42 (Redis, in memory)
+like ─► UPDATE row 42 ├─ row lock        like ─► INCR likes:42
+like ─► UPDATE row 42 ┘  contention      ...
+                                         every 5 sec: worker reads + resets counter
+                                         ─► UPDATE posts SET likes = likes + 4,812
+```
+
+- **Who liked what** (to stop double likes, show "you liked this") → a `likes(user_id, post_id)` table with a unique key, or a Redis set.
+- **The number shown** → a Redis counter, eventually synced to the DB. Being a few seconds behind is fine (eventual consistency, F13).
+- For extremely hot keys, split the counter: `likes:42:shard0..9`, sum them when reading.
+
+---
+
+## Q26. Design Analytics Event Ingestion (millions of clicks per minute)
+
+```mermaid
+flowchart LR
+    B["Browsers / apps"] -->|"batch of events"| C["Collector API<br/>(stateless, validates)"]
+    C --> K[("Kafka / Kinesis<br/>event log")]
+    K --> S["Stream processor<br/>real-time counts"]
+    K --> L["Loader"] --> W[("Data warehouse<br/>BigQuery / ClickHouse")]
+    S --> D["Live dashboard"]
+    W --> R["Reports / SQL queries"]
+```
+
+- The client **batches** events (send every 10 sec or every 50 events), not one request per click.
+- The collector only validates and appends to the log — no heavy work in the request.
+- **Kafka** keeps events for days, so you can replay them if a consumer had a bug.
+- Store raw events in a **column-oriented warehouse**, which is fast for "count by day by country".
+- Analytics is not your main DB — never run these heavy queries on the production database.
+
+---
+
+## Q27. How do you keep the cache and the database in sync?
+
+```text
+Common bug: update DB, then update cache — two writers race
+
+Writer A: DB = 1 ────────────────────────── cache = 1
+Writer B:          DB = 2 ── cache = 2
+Final:    DB = 2, cache = 1   ✗ stale forever (until TTL)
+```
+
+**Safer default: update the DB, then DELETE the cache key** (the next read refills it).
+
+```mermaid
+flowchart LR
+    W["Write request"] --> DB[("1. UPDATE DB")]
+    DB --> DEL["2. DEL cache key"]
+    R["Next read"] --> M{"cache hit?"}
+    M -->|miss| RD["read DB → SET cache"]
+```
+
+| Strategy | How | Good for |
+| -------- | --- | -------- |
+| Cache-aside + delete on write | App deletes the key after DB write | Most apps (default) |
+| Write-through | Write cache and DB together | Data read right after writing |
+| Write-behind | Write cache, flush to DB later | Counters; risk of data loss |
+| CDC (change data capture) | DB change log → event → invalidate cache | Many services caching the same data |
+
+- **Always set a TTL** as a safety net, so any stale value eventually expires.
+- Accept that a cache gives **eventual** consistency; don't cache data that must be exact (balances).
+
+---
+
+## Q28. A third-party API you depend on is slow or down. What do you do?
+
+```text
+Without protection
+  Your API ──► Slow provider (30s timeout)
+  every request waits 30s → all threads/connections busy → YOUR app goes down too
+```
+
+**Layers of defence:**
+
+```mermaid
+flowchart LR
+    A["Your service"] --> T["Timeout<br/>e.g. 2s"]
+    T --> R["Retry<br/>backoff + jitter,<br/>max 2–3"]
+    R --> CB{"Circuit breaker"}
+    CB -->|closed| P["Provider"]
+    CB -->|open| F["Fallback<br/>cached data / default /<br/>queue for later"]
+```
+
+**Circuit breaker states:**
+
+```text
+CLOSED ──(many failures)──► OPEN ──(after 30s)──► HALF-OPEN
+  ▲   calls go through        fail instantly,        let 1 test call through
+  │                           don't call provider        │
+  └──────────── test succeeds ◄──────────────────────────┘
+                test fails ──► back to OPEN
+```
+
+- **Timeouts** on every external call — the default is often "wait forever".
+- **Fallbacks:** show cached prices, hide the "recommendations" widget, or queue the request and finish it later.
+- **Bulkhead:** give each provider its own connection pool, so one slow provider can't use them all.
+
+---
+
+## Q29. How do you handle 1 million concurrent WebSocket connections?
+
+```mermaid
+flowchart LR
+    U["1M clients"] --> LB["Load Balancer<br/>(supports WebSocket upgrade)"]
+    LB --> G1["Gateway 1<br/>~50K connections"]
+    LB --> G2["Gateway 2"]
+    LB --> GN["Gateway N"]
+    G1 <--> PS[("Redis Pub/Sub / Kafka")]
+    G2 <--> PS
+    GN <--> PS
+    PS <--> APP["Business services"]
+    G1 --> REG[("Redis: userId → gateway")]
+```
+
+- Each connection is long-lived, so the limit is **memory and file descriptors**, not CPU. Node can hold tens of thousands per instance; plan ~20 gateway servers for 1M.
+- Gateways only hold connections; business logic lives in other services.
+- To message user X: look up which gateway holds X, publish to that gateway.
+- **Reconnect storms:** if a gateway restarts, 50K clients reconnect at once → clients reconnect with random **jitter** and backoff.
+- Send heartbeats (ping/pong) to detect dead connections and free resources.
+
+---
+
+## Q30. Design Product Search (with filters, typos, ranking)
+
+SQL `LIKE '%phone%'` can't use an index and has no relevance ranking or typo tolerance. Use a **search engine** next to your DB.
+
+```mermaid
+flowchart LR
+    ADM["Admin edits product"] --> DB[("PostgreSQL<br/>source of truth")]
+    DB -->|"change event / CDC"| Q[(Queue)]
+    Q --> IDX["Indexer"] --> ES[("Elasticsearch /<br/>OpenSearch / Meilisearch")]
+    U["User searches<br/>'iphne 15 case'"] --> API --> ES
+    ES -->|"ranked IDs + facets"| API
+```
+
+**Inverted index** — why it's fast:
+
+```text
+Docs                         Inverted index
+1: "red iphone case"         red     → [1]
+2: "iphone charger"          iphone  → [1, 2]
+3: "red charger"             case    → [1]
+                             charger → [2, 3]
+Search "red charger" → intersect → doc 3 first (matches both), then 1, 2
+```
+
+- The DB stays the source of truth; the search index is a **copy**, updated asynchronously (may lag by seconds).
+- Supports fuzzy matching (typos), synonyms, filters (brand, price range), and facets ("Apple (42)").
+
+---
+
+## Q31. How do you log out a JWT user immediately?
+
+A JWT is valid until it expires — the server doesn't store it, so it can't simply "delete" it.
+
+```text
+Access token (15 min) + Refresh token (7 days, stored in DB)
+
+Logout / ban user:
+  1. Delete or revoke the refresh token in the DB  → no new access tokens
+  2. Old access token still works ≤ 15 min         → acceptable for most apps
+  3. Need it to stop NOW? → add its ID (jti) to a Redis denylist until it expires
+```
+
+```mermaid
+flowchart LR
+    R["Request with JWT"] --> V{"Signature + expiry valid?"}
+    V -->|no| X["401"]
+    V -->|yes| D{"jti in Redis denylist?"}
+    D -->|yes| X
+    D -->|no| OK["Allow"]
+```
+
+- Keep access tokens **short-lived**, so the window is small.
+- "Log out of all devices": store a `tokenVersion` on the user; bump it, and reject tokens with an older version.
+- If you need instant revocation everywhere, **server-side sessions** (Redis) may simply be the better choice.
+
+---
+
+## Q32. How do you change the database schema with zero downtime?
+
+Example: rename column `name` → `full_name` while the app is live. Renaming directly breaks the old code that is still running.
+
+**Expand → Migrate → Contract:**
+
+```text
+Step 1 EXPAND     add column full_name (nullable)         old code still works
+Step 2 DEPLOY     app writes BOTH name and full_name,
+                  reads full_name if present else name
+Step 3 BACKFILL   copy name → full_name in small batches  (not one huge UPDATE)
+Step 4 DEPLOY     app reads/writes only full_name
+Step 5 CONTRACT   drop column name                        after you're sure
+```
+
+- Each step is safe to deploy and to **roll back** on its own.
+- Backfill in batches (`WHERE id BETWEEN ...`) so you don't lock the table.
+- Adding an index on a big Postgres table: use `CREATE INDEX CONCURRENTLY` so writes aren't blocked.
+
+---
+
+## Q33. Multi-Tenant SaaS — how do you keep each customer's data separate?
+
+```text
+1. Shared DB, shared tables          2. Shared DB, schema per tenant     3. DB per tenant
+┌──────────────────────────┐         ┌──────────────────────────┐        ┌────────┐ ┌────────┐
+│ orders                   │         │ schema acme.orders       │        │ acme DB│ │ globex │
+│  tenant_id │ id │ total  │         │ schema globex.orders     │        └────────┘ └────────┘
+│  acme      │ 1  │ 50     │         └──────────────────────────┘
+│  globex    │ 2  │ 90     │
+└──────────────────────────┘
+```
+
+| | Shared tables + `tenant_id` | Schema per tenant | DB per tenant |
+| - | --------------------------- | ----------------- | ------------- |
+| Cost | Lowest | Medium | Highest |
+| Isolation | Weakest (one missing `WHERE` leaks data) | Medium | Strongest |
+| Migrations | One | One per schema | One per DB |
+| Good for | Many small customers | Tens to hundreds | Enterprise / compliance |
+
+- With shared tables, **never rely on every developer remembering** `WHERE tenant_id = ?`:
+  - put `tenant_id` from the auth token into a request context, and filter in one data-access layer,
+  - or use **PostgreSQL Row-Level Security** so the DB enforces it.
+- Index on `(tenant_id, ...)`, and watch for one huge tenant slowing others (**noisy neighbour**) — move them to their own DB if needed.
