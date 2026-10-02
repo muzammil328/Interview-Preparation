@@ -1,12 +1,10 @@
 ---
-id: performance
-title: "Performance"
-sidebar_label: "Performance"
-sidebar_position: 3
-description: "Performance — React interview notes."
+id: why-does-a-component-re-render
+title: "Why Does a Component Re-render? (React.memo)"
+sidebar_label: "Why Does a Component Re-render? (React.memo)"
+sidebar_position: 29
+description: "Why Does a Component Re-render? (React.memo) — React interview notes."
 ---
-### Why Does a Component Re-render?
-
 A component re-renders when:
 
 - Its **state** changes
@@ -35,9 +33,7 @@ Optimization techniques:
 
 **Profile first, then optimize.** Identify the actual bottleneck with React DevTools before adding memoization.
 
----
-
-### React.memo
+## React.memo
 
 Prevents a component from re-rendering when its props haven't changed, according to a shallow comparison.
 
@@ -62,33 +58,5 @@ Parent renders:
 ```
 
 Don't use it everywhere — it's an optimization tool, and the comparison itself has a cost.
-
----
-
-### Code Splitting / Lazy Loading
-
-Loading JavaScript only when it's needed, instead of shipping the whole app up front.
-
-```jsx
-const Dashboard = lazy(() => import('./Dashboard'));
-
-<Suspense fallback={<Loading />}>
-  <Dashboard />
-</Suspense>;
-```
-
-This reduces the initial bundle and improves first load.
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant A as App (main bundle)
-    participant N as Network
-    U->>A: opens /dashboard
-    A->>A: show Suspense fallback (Loading...)
-    A->>N: download Dashboard chunk
-    N-->>A: Dashboard.js
-    A->>U: render Dashboard
-```
 
 ---
