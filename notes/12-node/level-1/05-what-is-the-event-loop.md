@@ -11,8 +11,9 @@ The event loop is the mechanism that lets Node perform non-blocking, asynchronou
 
 - **First,** synchronous code executes line-by-line on the Call Stack.
 - **Second,** async tasks (timers, file reads, network calls) are handed off to **libuv** / the OS (in Node there are no "Web APIs" — that is the browser).
-- **Third,** when those tasks finish, their callbacks are queued in the matching phase.
-- **Finally,** when the Call Stack is empty, the event loop walks through its phases and runs the queued callbacks.
+- **Third,** when those tasks finish, their callbacks (**macrotasks**) are queued in the matching phase.
+- **Fourth,** whenever the Call Stack empties — after the sync code and after **every** callback — Node drains the **microtask** queues first: all of `process.nextTick()`, then all Promise callbacks.
+- **Finally,** the event loop walks through its phases and runs the queued callbacks.
 
 ### Event Loop Phases
 
