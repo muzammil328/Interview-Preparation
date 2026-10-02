@@ -1,0 +1,49 @@
+﻿
+> interview-prep-site@1.0.0 build
+> docusaurus build
+
+[INFO] [en] Creating an optimized production build...
+[90m[[90mwebpackbar[90m][39m [36mΓä╣[39m Compiling Client
+[90m[[90mwebpackbar[90m][39m [36mΓä╣[39m Compiling Server
+[90m[[90mwebpackbar[90m][39m [32mΓ£ö[39m Server: Compiled successfully in 13.67s
+[90m[[90mwebpackbar[90m][39m [32mΓ£ö[39m Client: Compiled successfully in 16.27s
+node.exe : [WARNING] Docusaurus found broken anchors!
+At C:\Users\HP\AppData\Roaming\npm\npm.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/npm/bin/npm-cli.js" $args
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([WARNING] Docus...broken anchors!:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+Please check the pages of your site in the list below, and make sure you don't reference any anchor that does not 
+exist.
+Note: it's possible to ignore broken anchors with the 'onBrokenAnchors' Docusaurus configuration, and let the build 
+pass.
+
+Exhaustive list of all broken anchors found:
+- Broken anchor on source page path = /notes/mongodb/common-questions:
+   -> linking to #embedding-vs-referencing-normalization-vs-denormalization (resolved as: 
+/notes/mongodb/common-questions#embedding-vs-referencing-normalization-vs-denormalization)
+   -> linking to #indexing (resolved as: /notes/mongodb/common-questions#indexing)
+   -> linking to #aggregation-pipeline (resolved as: /notes/mongodb/common-questions#aggregation-pipeline)
+   -> linking to #schema-design-for-one-to-many (resolved as: 
+/notes/mongodb/common-questions#schema-design-for-one-to-many)
+- Broken anchor on source page path = /notes/react/interview-questions:
+   -> linking to #fragments (resolved as: /notes/react/interview-questions#fragments)
+- Broken anchor on source page path = /notes/react/quick-revision-tl-dr:
+   -> linking to #lists-and-keys (resolved as: /notes/react/quick-revision-tl-dr#lists-and-keys)
+   -> linking to #synthetic-events (resolved as: /notes/react/quick-revision-tl-dr#synthetic-events)
+   -> linking to #what-are-hooks-and-what-are-the-rules-of-hooks (resolved as: 
+/notes/react/quick-revision-tl-dr#what-are-hooks-and-what-are-the-rules-of-hooks)
+- Broken anchor on source page path = /notes/react/react-js-interview-questions-for-intermediate:
+   -> linking to #strict-mode (resolved as: /notes/react/react-js-interview-questions-for-intermediate#strict-mode)
+- Broken anchor on source page path = /notes/react/react-js-interview-questions-on-advanced-concepts:
+   -> linking to #automatic-batching (resolved as: 
+/notes/react/react-js-interview-questions-on-advanced-concepts#automatic-batching)
+- Broken anchor on source page path = /notes/sql/postgresql/transactions:
+   -> linking to #acid (resolved as: /notes/sql/postgresql/transactions#acid)
+   -> linking to #isolation-levels-and-anomalies (resolved as: 
+/notes/sql/postgresql/transactions#isolation-levels-and-anomalies)
+
+[SUCCESS] Generated static files in "build".
+[INFO] Use `npm run serve` command to test your build locally.

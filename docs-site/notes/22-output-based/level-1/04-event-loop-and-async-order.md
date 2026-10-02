@@ -22,16 +22,11 @@ console.log('4');
 
 **Output:** `1`, `4`, `3`, `2`
 
-```text
-Step | Call Stack            | Microtask Queue | Macrotask Queue | Output
-─────┼───────────────────────┼─────────────────┼─────────────────┼────────────
- 1   | console.log('1')      |                 |                 | 1
- 2   | setTimeout(...)       |                 | [log 2]         | 1
- 3   | Promise.then(...)     | [log 3]         | [log 2]         | 1
- 4   | console.log('4')      | [log 3]         | [log 2]         | 1 4
- 5   | (empty) → drain micro |                 | [log 2]         | 1 4 3
- 6   | run ONE macrotask     |                 |                 | 1 4 3 2
-```
+| Phase                     | Output |
+| ------------------------- | ------ |
+| Synchronous (console)     | 1, 4   |
+| Microtasks (Promise)      | 3      |
+| Timer                     | 2      |
 
 Even with a `0`ms delay, `setTimeout` always waits for the stack **and** the microtask queue to be empty.
 
@@ -90,19 +85,6 @@ console.log("E");
 | Timer                     | D      |
 
 **Sync → nextTick → Promise → Timer**
-
-```text
-Step | Call Stack   | nextTick Queue | Promise Queue | Timer Queue | Output
-─────┼──────────────┼────────────────┼───────────────┼─────────────┼───────────
- 1   | log("A")     |                |               |             | A
- 2   | nextTick     | [B]            |               |             | A
- 3   | Promise.then | [B]            | [C]           |             | A
- 4   | setTimeout   | [B]            | [C]           | [D]         | A
- 5   | log("E")     | [B]            | [C]           | [D]         | A E
- 6   | (empty)      |                | [C]           | [D]         | A E B
- 7   |              |                |               | [D]         | A E B C
- 8   |              |                |               |             | A E B C D
-```
 
 ### Example 4 — setTimeout vs setImmediate (Node)
 
