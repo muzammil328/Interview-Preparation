@@ -5,13 +5,10 @@ sidebar_label: "Difference Between Next.js and React"
 sidebar_position: 2
 description: "Difference Between Next.js and React — Next.js interview notes."
 ---
-React is a **UI library** used for building user interfaces.
-
-Next.js is a **full-stack React framework** that provides routing, rendering strategies, optimization, and server-side features.
 
 | Feature       | React JS                     | Next.js                        |
 | ------------- | ---------------------------- | ------------------------------ |
-| Type          | UI Library                   | React Framework                |
+| Type          | UI Library                   | Full Stack React Framework     |
 | Rendering     | Mainly Client-Side Rendering | SSR, SSG, ISR, CSR             |
 | SEO           | Requires extra setup         | Better SEO support             |
 | Routing       | Uses React Router DOM        | Built-in file-based routing    |

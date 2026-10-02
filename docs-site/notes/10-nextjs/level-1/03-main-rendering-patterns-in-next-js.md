@@ -7,15 +7,6 @@ description: "Main Rendering Patterns in Next.js — Next.js interview notes."
 ---
 Next.js supports multiple rendering strategies.
 
-```mermaid
-flowchart TD
-    Q{"When is the HTML generated?"}
-    Q -->|"At build time"| SSG["SSG"]
-    Q -->|"At build time, refreshed later"| ISR["ISR"]
-    Q -->|"On every request"| SSR["SSR"]
-    Q -->|"In the browser"| CSR["CSR"]
-```
-
 | Pattern | HTML generated        | Data freshness       | Speed      | Example                  |
 | ------- | --------------------- | -------------------- | ---------- | ------------------------ |
 | SSG     | Build time            | Stale until rebuild  | Fastest    | Blog, docs               |
