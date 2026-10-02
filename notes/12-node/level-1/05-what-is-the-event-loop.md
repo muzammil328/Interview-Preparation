@@ -7,6 +7,28 @@ description: "What is the Event Loop? — Node.js interview notes."
 ---
 The event loop is the mechanism that lets Node perform non-blocking, asynchronous operations despite running JavaScript on one thread.
 
+### Who does what
+
+```text
+                         NODE.JS RUNTIME
+                                │
+       ┌────────────────────────┼────────────────────────┐
+       │                        │                        │
+   V8 ENGINE                NODE CORE                  libuv
+   executes JS          APIs + nextTick queue    event loop + async I/O
+       │                        │                        │
+  ┌────┴─────┐          fs, net, timers,         ┌───────┴────────┐
+  │          │          process.nextTick         │                │
+Call Stack  Promise                           OS kernel       Thread pool
+(sync code) microtasks                    (network sockets)  (fs, dns.lookup,
+            .then / await /                                   crypto, zlib)
+            queueMicrotask
+```
+
+- **V8** runs synchronous code on the Call Stack and owns the **Promise microtask queue**.
+- **Node core** provides the APIs (`fs`, `net`, timers) and owns the **`process.nextTick()` queue**, which is not part of V8.
+- **libuv** runs the **event loop**. It hands network I/O to the OS and runs blocking work (file system, `dns.lookup`, crypto, zlib) on its **thread pool**.
+
 ### How it works
 
 - **First,** synchronous code executes line-by-line on the Call Stack.
@@ -14,6 +36,8 @@ The event loop is the mechanism that lets Node perform non-blocking, asynchronou
 - **Third,** when those tasks finish, their callbacks (**macrotasks**) are queued in the matching phase.
 - **Fourth,** whenever the Call Stack empties — after the sync code and after **every** callback — Node drains the **microtask** queues first: all of `process.nextTick()`, then all Promise callbacks.
 - **Finally,** the event loop walks through its phases and runs the queued callbacks.
+
+`console.log()`, variable declarations, loops and plain function calls are **synchronous**. They run straight on the Call Stack and are not microtasks.
 
 ### Event Loop Phases
 
@@ -59,7 +83,7 @@ Handled by **libuv**. Each phase has its own callback queue.
 After **every callback** (since Node 11 — not only between phases), Node drains two extra queues before moving on:
 
 1. **`process.nextTick()` queue** — highest priority (managed by Node)
-2. **Promise microtask queue** — `.then()`, `.catch()`, `.finally()`, code after `await` (managed by V8)
+2. **Promise microtask queue** — `.then()`, `.catch()`, `.finally()`, code after `await`, `queueMicrotask()` (managed by V8)
 
 ```text
 Synchronous code
@@ -75,6 +99,12 @@ Next callback / next event loop phase (timers, poll, check, ...)
 - Macrotasks (timers, I/O, `setImmediate`) are lower priority and are scheduled by libuv.
 
 **Warning:** recursive `process.nextTick()` calls starve the event loop — the loop never reaches the next phase. Use `setImmediate()` when you want to yield.
+
+**Common misconception:** the order is **not** "sync → all microtasks → all macrotasks". Microtasks are drained again after **each** callback:
+
+```text
+Sync code → microtasks → callback → microtasks → callback → microtasks → ...
+```
 
 ### nextTick vs setImmediate vs setTimeout
 
@@ -95,6 +125,22 @@ setTimeout(() => console.log('timeout'), 0);
 setImmediate(() => console.log('immediate'));
 // Main module: either order is possible
 ```
+
+### Quick example
+
+```javascript
+console.log('1');
+setTimeout(() => console.log('2'), 0);
+Promise.resolve().then(() => console.log('3'));
+process.nextTick(() => console.log('4'));
+console.log('5');
+
+// Output: 1, 5, 4, 3, 2
+```
+
+1. **Sync code:** prints `1` and `5`. The timer, the promise and the nextTick are only scheduled at this point.
+2. **Microtasks:** the nextTick runs first (`4`), then the promise (`3`).
+3. **Event loop:** the timers phase runs the `setTimeout` callback (`2`).
 
 ### Worked example: guess the output
 
@@ -130,5 +176,31 @@ Step  What runs                  Why
  7    G                          check phase comes right after poll
  8    H                          timers phase is in the NEXT loop iteration
 ```
+
+### Interview mind map
+
+```text
+┌───────────────────────────────┐
+│ 1. SYNC JAVASCRIPT            │  V8 Call Stack
+└───────────────┬───────────────┘
+┌───────────────▼───────────────┐
+│ 2. MICROTASKS                 │  nextTick → Promise
+└───────────────┬───────────────┘
+┌───────────────▼───────────────┐
+│ 3. ASYNC WORK                 │  libuv → OS / thread pool
+└───────────────┬───────────────┘
+┌───────────────▼───────────────┐
+│ 4. CALLBACK READY             │  queued in its phase
+└───────────────┬───────────────┘
+┌───────────────▼───────────────┐ <──┐
+│ 5. EVENT LOOP RUNS CALLBACK   │    │
+└───────────────┬───────────────┘    │
+┌───────────────▼───────────────┐    │
+│ 6. MICROTASKS                 │    │  next callback
+│    nextTick → Promise         │ ───┘
+└───────────────────────────────┘
+```
+
+**One sentence to memorize:** V8 runs synchronous JavaScript and Promise microtasks, Node owns the `process.nextTick()` queue, and libuv runs async I/O and the event loop. After every callback, Node drains nextTick and then Promise microtasks before it moves on to the next callback.
 
 ---
