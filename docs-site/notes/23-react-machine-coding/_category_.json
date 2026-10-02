@@ -3,6 +3,7 @@
   "position": 23,
   "link": {
     "type": "generated-index",
+    "slug": "/react-machine-coding",
     "description": "React Machine Coding Interview — interview notes, one topic per page."
   }
 }

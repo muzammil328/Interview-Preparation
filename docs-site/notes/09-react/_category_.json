@@ -3,6 +3,7 @@
   "position": 9,
   "link": {
     "type": "generated-index",
+    "slug": "/react",
     "description": "React Interview Questions and Answers — interview notes, one topic per page."
   }
 }

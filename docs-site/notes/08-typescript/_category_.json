@@ -3,6 +3,7 @@
   "position": 8,
   "link": {
     "type": "generated-index",
+    "slug": "/typescript",
     "description": "TypeScript Interview — interview notes, one topic per page."
   }
 }

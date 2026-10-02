@@ -3,6 +3,7 @@
   "position": 4,
   "link": {
     "type": "generated-index",
+    "slug": "/package-manager",
     "description": "Node Package Manager (NPM) — interview notes, one topic per page."
   }
 }

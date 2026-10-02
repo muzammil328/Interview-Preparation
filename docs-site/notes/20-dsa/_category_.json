@@ -3,6 +3,7 @@
   "position": 20,
   "link": {
     "type": "generated-index",
+    "slug": "/dsa",
     "description": "DSA Interview — interview notes, one topic per page."
   }
 }

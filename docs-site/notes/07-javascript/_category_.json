@@ -3,6 +3,7 @@
   "position": 7,
   "link": {
     "type": "generated-index",
+    "slug": "/javascript",
     "description": "JavaScript Interview Questions — interview notes, one topic per page."
   }
 }
