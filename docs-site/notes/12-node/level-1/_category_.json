@@ -1,0 +1,8 @@
+{
+  "label": "Level 1 — Must Know",
+  "position": 1,
+  "link": {
+    "type": "generated-index",
+    "description": "Level 1 — asked in almost every Node.js interview. Revise these first."
+  }
+}
